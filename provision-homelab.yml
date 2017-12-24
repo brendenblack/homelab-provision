@@ -1,0 +1,121 @@
+---
+- hosts: homelab
+  vars:
+    epel_repo_url: https://dl.fedoraproject.org/pub/epel/epel-release-latest-{{ ansible_distribution_major_version }}.noarch.rpm
+    epel_repo_gpg_key_url: "/etc/pki/rpm-gpg/RPM-GPG-KEY-EPEL-{{ ansible_distribution_major_version }}"
+    epel_repofile_path: "/etc/yum.repos.d/epel.repo"
+    samba_shares_root: /samba
+  tasks:
+  - name: install KVM and required packages
+    yum:
+      name: "{{ item }}"
+      state: installed
+    with_items:
+      - qemu-kvm 
+      - qemu-img
+      - virt-manager
+      - libvirt
+      - libvirt-python
+      - libvirt-client
+      - virt-install
+      - virt-viewer
+      - bridge-utils
+
+  - name: install EPEL repo
+    yum:
+      name: "{{ epel_repo_url }}"
+      state: present
+  
+  - name: import EPEL GPG key
+    rpm_key:
+      key: "{{ epel_repo_gpg_key_url }}"
+      state: present
+    
+  - name: install Ansible
+    yum:
+      name: "{{ item }}"
+      state: installed
+    with_items:
+      - ansible
+      - python-pip
+
+  - name: install pywinrm
+    pip:
+      name: pywinrm
+      version: 0.1.1
+
+  - name: install Git
+    yum:
+      name: git
+      state: installed
+
+  - name: install Samba 
+    yum:
+      name: "{{ item }}"
+      state: present
+    with_items:
+      - samba
+      - samba-client
+      - samba-common
+  
+  - name: configure Samba
+    template:
+      src: templates/smb.conf.j2
+      dest: /etc/samba/smb.conf
+    notify:
+    - restart Samba services
+
+  - name: create Samba shares root directory
+    file:
+      state: directory
+      path: "{{ samba_shares_root }}"
+      owner: root
+      group: root
+      mode: '0755'
+    
+  - name: create Samba user directory
+    file:
+      state: directory
+      path: "{{ samba_shares_root }}/homelab"
+      owner: nobody
+      group: nobody
+      mode: 0755
+      setype: samba_share_t
+
+  - name: start Samba service(s)
+    service:
+      name: "{{ item }}"
+      state: started
+      enabled: yes
+    with_items:
+      - smb
+      - nmb
+
+  - name: open Samba firewall 
+    firewalld:
+      permanent: yes
+      zone: public
+      service: samba
+      state: enabled
+    notify: reload firewall
+
+  - name: clone Homelab repo
+    git:
+      repo: https://github.com/brendenblack/homelab.git
+      dest: /samba/homelab
+      update: yes
+
+  handlers:
+  - name: restart Samba services
+    service:
+      name: "{{ item }}"
+      state: restarted
+    with_items:
+      - smb
+      - nmb
+  
+  - name: reload firewall
+    service:
+      name: firewalld
+      state: restarted
+    

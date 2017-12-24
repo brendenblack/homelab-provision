@@ -1,0 +1,1 @@
+homelab ansible_host=192.168.1.173 ansible_user=root ansible_password="{{ root_pass }}"
